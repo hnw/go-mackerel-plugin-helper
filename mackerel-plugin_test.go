@@ -313,6 +313,34 @@ func ExampleFormatValuesWithWildcardAstarisk() {
 	// foo.1	500.000000	1437227240
 }
 
+func ExampleFormatValuesWithZeroValueImputation() {
+	var mp MackerelPlugin
+	prefix := "foo"
+	metric := Metrics{Name: "bar", Label: "Bar", Type: "uint64", Imputation: "zero"}
+	stat := map[string]interface{}{}
+	lastStat := map[string]interface{}{"bar": uint64(500)}
+	now := time.Unix(1437227240, 0)
+	lastTime := now.Add(-time.Duration(60) * time.Second)
+	mp.formatValues(prefix, metric, &stat, &lastStat, now, lastTime)
+
+	// Output:
+	// foo.bar	0.000000	1437227240
+}
+
+func ExampleFormatValuesWithLastValueImputation() {
+	var mp MackerelPlugin
+	prefix := "foo"
+	metric := Metrics{Name: "bar", Label: "Bar", Type: "uint64", Imputation: "lastValue"}
+	stat := map[string]interface{}{}
+	lastStat := map[string]interface{}{"bar": uint64(500)}
+	now := time.Unix(1437227240, 0)
+	lastTime := now.Add(-time.Duration(60) * time.Second)
+	mp.formatValues(prefix, metric, &stat, &lastStat, now, lastTime)
+
+	// Output:
+	// foo.bar	500	1437227240
+}
+
 // an example implementation
 type MemcachedPlugin struct {
 }
@@ -570,12 +598,12 @@ func (t testPHasntDiff) GraphDefinition() map[string]Graphs {
 
 func TestPluginHasDiff(t *testing.T) {
 	pHasDiff := NewMackerelPlugin(testPHasDiff{})
-	if !pHasDiff.hasDiff() {
+	if !pHasDiff.requiresLastValue() {
 		t.Errorf("something went wrong")
 	}
 
 	pHasntDiff := NewMackerelPlugin(testPHasntDiff{})
-	if pHasntDiff.hasDiff() {
+	if pHasntDiff.requiresLastValue() {
 		t.Errorf("something went wrong")
 	}
 }

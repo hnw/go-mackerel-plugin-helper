@@ -25,6 +25,7 @@ A plugin can specify `Graphs` and `Metrics`.
 - `Type`: 'float64', 'uint64' or 'uint32' can be specified. Default is `float64`
 - `Stacked`: If `Stacked` is true, the line is stacked.
 - `Scale`: Each value is multiplied by `Scale`.
+- `Imputation`: `never`, `zero` or `lastValue` can be specified. Default is `never`
 
 ```go
 var graphdef = map[string](mackerelplugin.Graphs){

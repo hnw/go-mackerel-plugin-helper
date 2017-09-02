@@ -25,6 +25,7 @@ type Metrics struct {
 	Type         string  `json:"-"`
 	Stacked      bool    `json:"stacked"`
 	Scale        float64 `json:"-"`
+	Imputation   string  `json:"-"`
 	AbsoluteName bool    `json:"-"`
 }
 
@@ -50,8 +51,8 @@ type PluginWithPrefix interface {
 // MackerelPlugin is for mackerel-agent-plugin
 type MackerelPlugin struct {
 	Plugin
-	Tempfile string
-	diff     *bool
+	Tempfile           string
+	_requiresLastValue *bool
 }
 
 // NewMackerelPlugin returns new MackerelPlugin struct
@@ -60,21 +61,22 @@ func NewMackerelPlugin(plugin Plugin) MackerelPlugin {
 	return mp
 }
 
-func (h *MackerelPlugin) hasDiff() bool {
-	if h.diff == nil {
-		diff := false
-		h.diff = &diff
-	DiffCheck:
+// hasLastValue ...
+func (h *MackerelPlugin) requiresLastValue() bool {
+	if h._requiresLastValue == nil {
+		_requiresLastValue := false
+		h._requiresLastValue = &_requiresLastValue
+	hasLastValueCheck:
 		for _, graph := range h.GraphDefinition() {
 			for _, metric := range graph.Metrics {
-				if metric.Diff {
-					*h.diff = true
-					break DiffCheck
+				if metric.Diff || metric.HasMissingData() {
+					*h._requiresLastValue = true
+					break hasLastValueCheck
 				}
 			}
 		}
 	}
-	return *h.diff
+	return *h._requiresLastValue
 }
 
 func (h *MackerelPlugin) printValue(w io.Writer, key string, value interface{}, now time.Time) {
@@ -93,7 +95,7 @@ func (h *MackerelPlugin) printValue(w io.Writer, key string, value interface{}, 
 }
 
 func (h *MackerelPlugin) fetchLastValues() (map[string]interface{}, time.Time, error) {
-	if !h.hasDiff() {
+	if !h.requiresLastValue() {
 		return nil, time.Unix(0, 0), nil
 	}
 	lastTime := time.Now()
@@ -123,7 +125,7 @@ func (h *MackerelPlugin) fetchLastValues() (map[string]interface{}, time.Time, e
 }
 
 func (h *MackerelPlugin) saveValues(values map[string]interface{}, now time.Time) error {
-	if !h.hasDiff() {
+	if !h.requiresLastValue() {
 		return nil
 	}
 	fname := h.tempfilename()
@@ -219,7 +221,19 @@ func (h *MackerelPlugin) formatValues(prefix string, metric Metrics, stat *map[s
 	}
 	value, ok := (*stat)[name]
 	if !ok || value == nil {
-		return
+		switch metric.Imputation {
+		case "zero":
+			value = 0.0
+			(*stat)[name] = value
+		case "lastValue":
+			value = (*lastStat)[name]
+			if value == nil {
+				return
+			}
+			(*stat)[name] = value
+		default:
+			return
+		}
 	}
 
 	switch value.(type) {
@@ -292,6 +306,17 @@ func (h *MackerelPlugin) formatValuesWithWildcard(prefix string, metric Metrics,
 	if err != nil {
 		log.Fatalln("Failed to compile regexp: ", err)
 	}
+
+	if metric.HasMissingData() {
+		for k := range *lastStat {
+			if _, ok := (*stat)[k]; !ok {
+				if re.MatchString(k) {
+					(*stat)[k] = nil
+				}
+			}
+		}
+	}
+
 	for k := range *stat {
 		if re.MatchString(k) {
 			metricEach := metric
@@ -337,6 +362,14 @@ func (h *MackerelPlugin) OutputValues() {
 	if err != nil {
 		log.Fatalln("saveValues: ", err)
 	}
+}
+
+// HasMissingData ...
+func (h *Metrics) HasMissingData() bool {
+	if h.Imputation == "zero" || h.Imputation == "lastValue" {
+		return true
+	}
+	return false
 }
 
 // GraphDef represents graph definitions
